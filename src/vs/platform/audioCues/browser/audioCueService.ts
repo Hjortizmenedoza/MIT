@@ -296,6 +296,7 @@ export class Sound {
 
 	public static readonly error = Sound.register({ fileName: 'error.mp3' });
 	public static readonly warning = Sound.register({ fileName: 'warning.mp3' });
+	public static readonly success = Sound.register({ fileName: 'success.mp3' });
 	public static readonly foldedArea = Sound.register({ fileName: 'foldedAreas.mp3' });
 	public static readonly break = Sound.register({ fileName: 'break.mp3' });
 	public static readonly quickFixes = Sound.register({ fileName: 'quickFixes.mp3' });
@@ -466,7 +467,7 @@ export class AudioCue {
 
 	public static readonly terminalCommandSucceded = AudioCue.register({
 		name: localize('audioCues.terminalCommandSucceded', 'Terminal Command Succeded'),
-		sound: Sound.terminalBell,
+		sound: Sound.success,
 		settingsKey: 'audioCues.terminalCommandSucceded',
 		alertSettingsKey: AccessibilityAlertSettingId.TerminalCommandSucceded,
 		alertMessage: localize('audioCues.terminalCommandSucceded.alertMessage', 'Command Succeded')
