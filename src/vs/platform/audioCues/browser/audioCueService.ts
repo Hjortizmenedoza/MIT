@@ -296,6 +296,7 @@ export class Sound {
 
 	public static readonly error = Sound.register({ fileName: 'error.mp3' });
 	public static readonly warning = Sound.register({ fileName: 'warning.mp3' });
+	public static readonly success = Sound.register({ fileName: 'success.mp3' });
 	public static readonly foldedArea = Sound.register({ fileName: 'foldedAreas.mp3' });
 	public static readonly break = Sound.register({ fileName: 'break.mp3' });
 	public static readonly quickFixes = Sound.register({ fileName: 'quickFixes.mp3' });
@@ -344,6 +345,7 @@ export const enum AccessibilityAlertSettingId {
 	TerminalQuickFix = 'accessibility.alert.terminalQuickFix',
 	TerminalBell = 'accessibility.alert.terminalBell',
 	TerminalCommandFailed = 'accessibility.alert.terminalCommandFailed',
+	TerminalCommandSucceeded = 'accessibility.alert.terminalCommandSucceeded',
 	TaskCompleted = 'accessibility.alert.taskCompleted',
 	TaskFailed = 'accessibility.alert.taskFailed',
 	ChatRequestSent = 'accessibility.alert.chatRequestSent',
@@ -461,6 +463,14 @@ export class AudioCue {
 		settingsKey: 'audioCues.terminalCommandFailed',
 		alertSettingsKey: AccessibilityAlertSettingId.TerminalCommandFailed,
 		alertMessage: localize('audioCues.terminalCommandFailed.alertMessage', 'Command Failed')
+	});
+
+	public static readonly terminalCommandSucceeded = AudioCue.register({
+		name: localize('audioCues.terminalCommandSucceeded', 'Terminal Command Succeeded'),
+		sound: Sound.success,
+		settingsKey: 'audioCues.terminalCommandSucceeded',
+		alertSettingsKey: AccessibilityAlertSettingId.TerminalCommandSucceeded,
+		alertMessage: localize('audioCues.terminalCommandSucceeded.alertMessage', 'Command Succeeded')
 	});
 
 	public static readonly terminalBell = AudioCue.register({
