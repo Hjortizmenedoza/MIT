@@ -5,6 +5,32 @@
 
 declare module 'vscode' {
 
+	// This can represent a :
+	// - user reference to a tool, which has no value yet
+	// - a tool that was invoked once before sending the request, like 'selection', and has a value
+	// - a result from the `ChatParticipantCompletionItemProvider` which is not a tool, and has a value
+	// - not a tool, like #file, and has a value
+	export interface ChatReference {
+		/**
+		 * The name of the reference/tool type.
+		 *
+		 * *Note* that the name doesn't include the leading `#`-character,
+		 * e.g `selection` for `#selection`.
+		 */
+		readonly name: string;
+
+		/**
+		 * The start and end index of the tool in the {@link ChatAgentRequest.prompt prompt}.
+		 *
+		 * *Note* that the indices take the leading `#`-character into account which means they can
+		 * used to modify the prompt as-is.
+		 */
+		readonly range?: [start: number, end: number];
+
+		// If there's no value, it's a tool reference which needs to be resolved by invoking the tool
+		readonly value: any | undefined;
+	}
+
 	/**
 	 * Represents a user request in chat history.
 	 */
@@ -31,11 +57,13 @@ declare module 'vscode' {
 		readonly command?: string;
 
 		/**
-		 * The variables that were referenced in this message.
+		 * The tools that were referenced in this message.
 		 */
-		readonly variables: ChatResolvedVariable[];
+		readonly userToolInvocations: ChatReference[];
 
-		private constructor(prompt: string, command: string | undefined, variables: ChatResolvedVariable[], participant: { extensionId: string; name: string });
+		readonly references: readonly ChatReference[];
+
+		private constructor(prompt: string, command: string | undefined, userToolInvocations: ChatReference[], participant: { extensionId: string; name: string });
 	}
 
 	/**
@@ -184,7 +212,7 @@ declare module 'vscode' {
 	/**
 	 * A chat request handler is a callback that will be invoked when a request is made to a chat participant.
 	 */
-	export type ChatRequestHandler = (request: ChatRequest, context: ChatContext, response: ChatResponseStream, token: CancellationToken) => ProviderResult<ChatResult>;
+	export type ChatRequestHandler = (request: ChatRequest, context: ChatContext, toolAccessor: ChatToolAccessor, response: ChatResponseStream, token: CancellationToken) => ProviderResult<ChatResult>;
 
 	/**
 	 * A chat participant can be invoked by the user in a chat session, using the `@` prefix. When it is invoked, it handles the chat request and is solely
@@ -246,33 +274,6 @@ declare module 'vscode' {
 	}
 
 	/**
-	 * A resolved variable value is a name-value pair as well as the range in the prompt where a variable was used.
-	 */
-	export interface ChatResolvedVariable {
-		/**
-		 * The name of the variable.
-		 *
-		 * *Note* that the name doesn't include the leading `#`-character,
-		 * e.g `selection` for `#selection`.
-		 */
-		readonly name: string;
-
-		/**
-		 * The start and end index of the variable in the {@link ChatRequest.prompt prompt}.
-		 *
-		 * *Note* that the indices take the leading `#`-character into account which means they can
-		 * used to modify the prompt as-is.
-		 */
-		readonly range?: [start: number, end: number];
-
-		// TODO@API decouple of resolve API, use `value: string | Uri | (maybe) unknown?`
-		/**
-		 * The values of the variable. Can be an empty array if the variable doesn't currently have a value.
-		 */
-		readonly values: ChatVariableValue[];
-	}
-
-	/**
 	 * The location at which the chat is happening.
 	 */
 	export enum ChatLocation {
@@ -307,16 +308,21 @@ declare module 'vscode' {
 		readonly command: string | undefined;
 
 		/**
-		 * The list of variables and their values that are referenced in the prompt.
+		 * The list of tools that were explicitly invoked by the user in the prompt. (and also checked implicit invocations)
 		 *
-		 * *Note* that the prompt contains varibale references as authored and that it is up to the participant
-		 * to further modify the prompt, for instance by inlining variable values or creating links to
-		 * headings which contain the resolved values. Variables are sorted in reverse by their range
-		 * in the prompt. That means the last variable in the prompt is the first in this list. This simplifies
+		 * *Note* that the prompt contains tool references as authored and that it is up to the participant
+		 * to further modify the prompt, for instance by inlining tool values or creating links to
+		 * headings which contain the resolved values. tools are sorted in reverse by their range
+		 * in the prompt. That means the last tool in the prompt is the first in this list. This simplifies
 		 * string-manipulation of the prompt.
 		 */
-		// TODO@API Q? are there implicit variables that are not part of the prompt?
-		readonly variables: readonly ChatResolvedVariable[];
+		readonly userToolInvocations: readonly ChatReference[];
+
+		/**
+		 * Other non-tool references.
+		 * These two lists could technically just be one list, but it seems more clear this way.
+		 */
+		readonly references: readonly ChatReference[];
 
 		/**
 		 * The location at which the chat is happening. This will always be one of the supported values
@@ -452,31 +458,5 @@ declare module 'vscode' {
 		 * @returns A new chat participant
 		 */
 		export function createChatParticipant(name: string, handler: ChatRequestHandler): ChatParticipant;
-	}
-
-	/**
-	 * The detail level of this chat variable value.
-	 */
-	export enum ChatVariableLevel {
-		Short = 1,
-		Medium = 2,
-		Full = 3
-	}
-
-	export interface ChatVariableValue {
-		/**
-		 * The detail level of this chat variable value. If possible, variable resolvers should try to offer shorter values that will consume fewer tokens in an LLM prompt.
-		 */
-		level: ChatVariableLevel;
-
-		/**
-		 * The variable's value, which can be included in an LLM prompt as-is, or the chat participant may decide to read the value and do something else with it.
-		 */
-		value: string | Uri;
-
-		/**
-		 * A description of this value, which could be provided to the LLM as a hint.
-		 */
-		description?: string;
 	}
 }

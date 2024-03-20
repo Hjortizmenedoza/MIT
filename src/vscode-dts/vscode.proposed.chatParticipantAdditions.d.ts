@@ -164,10 +164,10 @@ declare module 'vscode' {
 		detail?: string;
 		documentation?: string | MarkdownString;
 
-		constructor(label: string | CompletionItemLabel, values: ChatVariableValue[]);
+		constructor(label: string | CompletionItemLabel, value: any);
 	}
 
-	export type ChatExtendedRequestHandler = (request: ChatRequest, context: ChatContext, response: ChatExtendedResponseStream, token: CancellationToken) => ProviderResult<ChatResult>;
+	export type ChatExtendedRequestHandler = (request: ChatRequest, context: ChatContext, toolAccessor: ChatToolAccessor, response: ChatExtendedResponseStream, token: CancellationToken) => ProviderResult<ChatResult>;
 
 	export namespace chat {
 		/**
