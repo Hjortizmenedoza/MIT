@@ -4,8 +4,9 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { compareBy, numberComparator } from 'vs/base/common/arrays';
-import { SetMap, groupBy } from 'vs/base/common/collections';
-import { once } from 'vs/base/common/functional';
+import { groupBy } from 'vs/base/common/collections';
+import { SetMap } from './map';
+import { createSingleCallFunction } from 'vs/base/common/functional';
 import { Iterable } from 'vs/base/common/iterator';
 
 // #region Disposable Tracking
@@ -102,8 +103,7 @@ export class DisposableTracker implements IDisposableTracker {
 
 		const leaking = [...this.livingDisposables.entries()]
 			.filter(([, v]) => v.source !== null && !this.getRootParent(v, rootParentCache).isSingleton)
-			.map(([k]) => k)
-			.flat();
+			.flatMap(([k]) => k);
 
 		return leaking;
 	}
@@ -345,7 +345,7 @@ export function combinedDisposable(...disposables: IDisposable[]): IDisposable {
  */
 export function toDisposable(fn: () => void): IDisposable {
 	const self = trackDisposable({
-		dispose: once(() => {
+		dispose: createSingleCallFunction(() => {
 			markAsDisposed(self);
 			fn();
 		})
@@ -429,6 +429,34 @@ export class DisposableStore implements IDisposable {
 		}
 
 		return o;
+	}
+
+	/**
+	 * Deletes a disposable from store and disposes of it. This will not throw or warn and proceed to dispose the
+	 * disposable even when the disposable is not part in the store.
+	 */
+	public delete<T extends IDisposable>(o: T): void {
+		if (!o) {
+			return;
+		}
+		if ((o as unknown as DisposableStore) === this) {
+			throw new Error('Cannot dispose a disposable on itself!');
+		}
+		this._toDispose.delete(o);
+		o.dispose();
+	}
+
+	/**
+	 * Deletes the value from the store, but does not dispose it.
+	 */
+	public deleteAndLeak<T extends IDisposable>(o: T): void {
+		if (!o) {
+			return;
+		}
+		if (this._toDispose.has(o)) {
+			this._toDispose.delete(o);
+			setParentOfDisposable(o, null);
+		}
 	}
 }
 
@@ -528,6 +556,35 @@ export class MutableDisposable<T extends IDisposable> implements IDisposable {
 	}
 }
 
+/**
+ * Manages the lifecycle of a disposable value that may be changed like {@link MutableDisposable}, but the value must
+ * exist and cannot be undefined.
+ */
+export class MandatoryMutableDisposable<T extends IDisposable> implements IDisposable {
+	private _disposable = new MutableDisposable<T>();
+	private _isDisposed = false;
+
+	constructor(initialValue: T) {
+		this._disposable.value = initialValue;
+	}
+
+	get value(): T {
+		return this._disposable.value!;
+	}
+
+	set value(value: T) {
+		if (this._isDisposed || value === this._disposable.value) {
+			return;
+		}
+		this._disposable.value = value;
+	}
+
+	dispose() {
+		this._isDisposed = true;
+		this._disposable.dispose();
+	}
+}
+
 export class RefCountedDisposable {
 
 	private _counter: number = 1;
@@ -595,9 +652,9 @@ export abstract class ReferenceCollection<T> {
 		}
 
 		const { object } = reference;
-		const dispose = once(() => {
-			if (--reference!.counter === 0) {
-				this.destroyReferencedObject(key, reference!.object);
+		const dispose = createSingleCallFunction(() => {
+			if (--reference.counter === 0) {
+				this.destroyReferencedObject(key, reference.object);
 				this.references.delete(key);
 			}
 		});
@@ -718,6 +775,14 @@ export class DisposableMap<K, V extends IDisposable = IDisposable> implements ID
 	deleteAndDispose(key: K): void {
 		this._store.get(key)?.dispose();
 		this._store.delete(key);
+	}
+
+	keys(): IterableIterator<K> {
+		return this._store.keys();
+	}
+
+	values(): IterableIterator<V> {
+		return this._store.values();
 	}
 
 	[Symbol.iterator](): IterableIterator<[K, V]> {

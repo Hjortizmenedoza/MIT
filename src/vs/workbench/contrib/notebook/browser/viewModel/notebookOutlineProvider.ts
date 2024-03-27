@@ -10,8 +10,8 @@ import { URI } from 'vs/base/common/uri';
 import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
 import { IMarkerService } from 'vs/platform/markers/common/markers';
 import { IThemeService } from 'vs/platform/theme/common/themeService';
-import { IActiveNotebookEditor, INotebookEditor, INotebookViewCellsUpdateEvent } from 'vs/workbench/contrib/notebook/browser/notebookBrowser';
-import { CellKind } from 'vs/workbench/contrib/notebook/common/notebookCommon';
+import { IActiveNotebookEditor, ICellViewModel, INotebookEditor, INotebookViewCellsUpdateEvent } from 'vs/workbench/contrib/notebook/browser/notebookBrowser';
+import { CellKind, NotebookSetting } from 'vs/workbench/contrib/notebook/common/notebookCommon';
 import { INotebookExecutionStateService, NotebookExecutionType } from 'vs/workbench/contrib/notebook/common/notebookExecutionStateService';
 import { OutlineChangeEvent, OutlineConfigKeys, OutlineTarget } from 'vs/workbench/services/outline/browser/outline';
 import { OutlineEntry } from './OutlineEntry';
@@ -70,7 +70,11 @@ export class NotebookCellOutlineProvider {
 		);
 
 		this._dispoables.add(_configurationService.onDidChangeConfiguration(e => {
-			if (e.affectsConfiguration('notebook.outline.showCodeCells')) {
+			if (e.affectsConfiguration(NotebookSetting.outlineShowMarkdownHeadersOnly) ||
+				e.affectsConfiguration(NotebookSetting.outlineShowCodeCells) ||
+				e.affectsConfiguration(NotebookSetting.outlineShowCodeCellSymbols) ||
+				e.affectsConfiguration(NotebookSetting.breadcrumbsShowCodeCells)
+			) {
 				this._recomputeState();
 			}
 		}));
@@ -107,11 +111,10 @@ export class NotebookCellOutlineProvider {
 		this._entries.length = 0;
 		if (notebookCells) {
 			const promises: Promise<void>[] = [];
-			for (const cell of notebookCells) {
-				if (cell.textModel) {
-					// gather all symbols asynchronously
-					promises.push(this._outlineEntryFactory.cacheSymbols(cell.textModel, this._outlineModelService, cancelToken));
-				}
+			// limit the number of cells so that we don't resolve an excessive amount of text models
+			for (const cell of notebookCells.slice(0, 100)) {
+				// gather all symbols asynchronously
+				promises.push(this._outlineEntryFactory.cacheSymbols(cell, this._outlineModelService, cancelToken));
 			}
 			await Promise.allSettled(promises);
 		}
@@ -137,17 +140,20 @@ export class NotebookCellOutlineProvider {
 		}
 
 		let includeCodeCells = true;
-		if (this._target === OutlineTarget.OutlinePane) {
-			includeCodeCells = this._configurationService.getValue<boolean>('notebook.outline.showCodeCells');
-		} else if (this._target === OutlineTarget.Breadcrumbs) {
+		if (this._target === OutlineTarget.Breadcrumbs) {
 			includeCodeCells = this._configurationService.getValue<boolean>('notebook.breadcrumbs.showCodeCells');
 		}
 
-		const notebookCells = notebookEditorWidget.getViewModel().viewCells.filter((cell) => cell.cellKind === CellKind.Markup || includeCodeCells);
+		let notebookCells: ICellViewModel[];
+		if (this._target === OutlineTarget.Breadcrumbs) {
+			notebookCells = notebookEditorWidget.getViewModel().viewCells.filter((cell) => cell.cellKind === CellKind.Markup || includeCodeCells);
+		} else {
+			notebookCells = notebookEditorWidget.getViewModel().viewCells;
+		}
 
 		const entries: OutlineEntry[] = [];
 		for (const cell of notebookCells) {
-			entries.push(...this._outlineEntryFactory.getOutlineEntries(cell, entries.length));
+			entries.push(...this._outlineEntryFactory.getOutlineEntries(cell, this._target, entries.length));
 			// send an event whenever any of the cells change
 			this._entriesDisposables.add(cell.model.onDidChangeContent(() => {
 				this._recomputeState();
@@ -203,7 +209,14 @@ export class NotebookCellOutlineProvider {
 					}
 				}
 			};
-			if (this._configurationService.getValue(OutlineConfigKeys.problemsEnabled)) {
+			const problem = this._configurationService.getValue('problems.visibility');
+			if (problem === undefined) {
+				return;
+			}
+
+			const config = this._configurationService.getValue(OutlineConfigKeys.problemsEnabled);
+
+			if (problem && config) {
 				markerServiceListener.value = this._markerService.onMarkerChanged(e => {
 					if (notebookEditorWidget.isDisposed) {
 						console.error('notebook editor is disposed');
@@ -223,7 +236,7 @@ export class NotebookCellOutlineProvider {
 		};
 		updateMarkerUpdater();
 		this._entriesDisposables.add(this._configurationService.onDidChangeConfiguration(e => {
-			if (e.affectsConfiguration(OutlineConfigKeys.problemsEnabled)) {
+			if (e.affectsConfiguration('problems.visibility') || e.affectsConfiguration(OutlineConfigKeys.problemsEnabled)) {
 				updateMarkerUpdater();
 				this._onDidChange.fire({});
 			}
@@ -255,8 +268,6 @@ export class NotebookCellOutlineProvider {
 			this._onDidChange.fire({ affectOnlyActiveElement: true });
 		}
 	}
-
-
 
 	get isEmpty(): boolean {
 		return this._entries.length === 0;

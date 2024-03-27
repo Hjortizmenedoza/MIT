@@ -20,11 +20,8 @@ registerAction2(class TextSearchQuickAccessAction extends Action2 {
 	constructor(
 	) {
 		super({
-			id: Constants.QuickTextSearchActionId,
-			title: {
-				value: nls.localize('quickTextSearch', "Quick Text Search (Experimental)"),
-				original: 'Quick Text Search (Experimental)'
-			},
+			id: Constants.SearchCommandIds.QuickTextSearchActionId,
+			title: nls.localize2('quickTextSearch', "Quick Search (Experimental)"),
 			category,
 			f1: true
 		});
@@ -34,7 +31,7 @@ registerAction2(class TextSearchQuickAccessAction extends Action2 {
 	override async run(accessor: ServicesAccessor, match: RenderableMatch | undefined): Promise<any> {
 		const quickInputService = accessor.get(IQuickInputService);
 		const searchText = getSearchText(accessor) ?? '';
-		quickInputService.quickAccess.show(TEXT_SEARCH_QUICK_ACCESS_PREFIX + searchText);
+		quickInputService.quickAccess.show(TEXT_SEARCH_QUICK_ACCESS_PREFIX + searchText, { preserveValue: !!searchText });
 	}
 });
 

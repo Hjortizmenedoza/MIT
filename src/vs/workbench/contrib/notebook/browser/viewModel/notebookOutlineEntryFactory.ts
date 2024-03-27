@@ -12,13 +12,13 @@ import { getMarkdownHeadersInCell } from 'vs/workbench/contrib/notebook/browser/
 import { OutlineEntry } from './OutlineEntry';
 import { CellKind } from 'vs/workbench/contrib/notebook/common/notebookCommon';
 import { INotebookExecutionStateService } from 'vs/workbench/contrib/notebook/common/notebookExecutionStateService';
-import { Range } from 'vs/editor/common/core/range';
-import { ITextModel } from 'vs/editor/common/model';
+import { IRange } from 'vs/editor/common/core/range';
 import { SymbolKind } from 'vs/editor/common/languages';
+import { OutlineTarget } from 'vs/workbench/services/outline/browser/outline';
 
 type entryDesc = {
 	name: string;
-	position: Range;
+	range: IRange;
 	level: number;
 	kind: SymbolKind;
 };
@@ -31,7 +31,7 @@ export class NotebookOutlineEntryFactory {
 		private readonly executionStateService: INotebookExecutionStateService
 	) { }
 
-	public getOutlineEntries(cell: ICellViewModel, index: number): OutlineEntry[] {
+	public getOutlineEntries(cell: ICellViewModel, target: OutlineTarget, index: number): OutlineEntry[] {
 		const entries: OutlineEntry[] = [];
 
 		const isMarkdown = cell.cellKind === CellKind.Markup;
@@ -66,27 +66,30 @@ export class NotebookOutlineEntryFactory {
 		}
 
 		if (!hasHeader) {
+			const exeState = !isMarkdown && this.executionStateService.getCellExecution(cell.uri);
+			let preview = content.trim();
+
 			if (!isMarkdown && cell.model.textModel) {
 				const cachedEntries = this.cellOutlineEntryCache[cell.model.textModel.id];
 
 				// Gathering symbols from the model is an async operation, but this provider is syncronous.
 				// So symbols need to be precached before this function is called to get the full list.
 				if (cachedEntries) {
+					// push code cell that is a parent of cached symbols if we are targeting the outlinePane
+					if (target === OutlineTarget.OutlinePane) {
+						entries.push(new OutlineEntry(index++, 7, cell, preview, !!exeState, exeState ? exeState.isPaused : false));
+					}
 					cachedEntries.forEach((cached) => {
-						entries.push(new OutlineEntry(index++, cached.level, cell, cached.name, false, false, cached.position, cached.kind));
+						entries.push(new OutlineEntry(index++, cached.level, cell, cached.name, false, false, cached.range, cached.kind));
 					});
-
 				}
 			}
 
-			const exeState = !isMarkdown && this.executionStateService.getCellExecution(cell.uri);
-			if (entries.length === 0) {
-				let preview = content.trim();
+			if (entries.length === 0) { // if there are no cached entries, use the first line of the cell as a code cell
 				if (preview.length === 0) {
 					// empty or just whitespace
 					preview = localize('empty', "empty cell");
 				}
-
 				entries.push(new OutlineEntry(index++, 7, cell, preview, !!exeState, exeState ? exeState.isPaused : false));
 			}
 		}
@@ -94,9 +97,10 @@ export class NotebookOutlineEntryFactory {
 		return entries;
 	}
 
-	public async cacheSymbols(textModel: ITextModel, outlineModelService: IOutlineModelService, cancelToken: CancellationToken) {
+	public async cacheSymbols(cell: ICellViewModel, outlineModelService: IOutlineModelService, cancelToken: CancellationToken) {
+		const textModel = await cell.resolveTextModel();
 		const outlineModel = await outlineModelService.getOrCreate(textModel, cancelToken);
-		const entries = createOutlineEntries(outlineModel.getTopLevelSymbols(), 7);
+		const entries = createOutlineEntries(outlineModel.getTopLevelSymbols(), 8);
 		this.cellOutlineEntryCache[textModel.id] = entries;
 	}
 }
@@ -107,11 +111,7 @@ type documentSymbol = ReturnType<outlineModel['getTopLevelSymbols']>[number];
 function createOutlineEntries(symbols: documentSymbol[], level: number): entryDesc[] {
 	const entries: entryDesc[] = [];
 	symbols.forEach(symbol => {
-		const position = new Range(symbol.selectionRange.startLineNumber,
-			symbol.selectionRange.startColumn,
-			symbol.selectionRange.startLineNumber,
-			symbol.selectionRange.startColumn);
-		entries.push({ name: symbol.name, position, level, kind: symbol.kind });
+		entries.push({ name: symbol.name, range: symbol.range, level, kind: symbol.kind });
 		if (symbol.children) {
 			entries.push(...createOutlineEntries(symbol.children, level + 1));
 		}

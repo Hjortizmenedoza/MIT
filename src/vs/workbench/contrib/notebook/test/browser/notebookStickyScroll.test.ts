@@ -6,7 +6,6 @@
 import * as assert from 'assert';
 import { Event } from 'vs/base/common/event';
 import { DisposableStore } from 'vs/base/common/lifecycle';
-import { isWeb } from 'vs/base/common/platform';
 import { mock } from 'vs/base/test/common/mock';
 import { assertSnapshot } from 'vs/base/test/common/snapshot';
 import { ensureNoDisposablesAreLeakedInTestSuite } from 'vs/base/test/common/utils';
@@ -20,8 +19,7 @@ import { CellKind } from 'vs/workbench/contrib/notebook/common/notebookCommon';
 import { createNotebookCellList, setupInstantiationService, withTestNotebook } from 'vs/workbench/contrib/notebook/test/browser/testNotebookEditor';
 import { OutlineTarget } from 'vs/workbench/services/outline/browser/outline';
 
-
-(isWeb ? suite.skip : suite)('NotebookEditorStickyScroll', () => {
+suite('NotebookEditorStickyScroll', () => {
 	let disposables: DisposableStore;
 	let instantiationService: TestInstantiationService;
 
@@ -52,7 +50,7 @@ import { OutlineTarget } from 'vs/workbench/services/outline/browser/outline';
 	}
 
 	function nbStickyTestHelper(domNode: HTMLElement, notebookEditor: INotebookEditor, notebookCellList: INotebookCellList, notebookOutlineEntries: OutlineEntry[], disposables: Pick<DisposableStore, 'add'>) {
-		const output = computeContent(domNode, notebookEditor, notebookCellList, notebookOutlineEntries);
+		const output = computeContent(notebookEditor, notebookCellList, notebookOutlineEntries, 0);
 		for (const stickyLine of output.values()) {
 			disposables.add(stickyLine.line);
 		}
@@ -183,7 +181,7 @@ import { OutlineTarget } from 'vs/workbench/services/outline/browser/outline';
 			});
 	});
 
-	test('test3: should render 0->1, 	collapsing against equivalent level header', async function () {
+	test('test3: should render 0->2, 	collapsing against equivalent level header', async function () {
 		await withTestNotebook(
 			[
 				['# header a', 'markdown', CellKind.Markup, [], {}],	// 0
@@ -224,7 +222,7 @@ import { OutlineTarget } from 'vs/workbench/services/outline/browser/outline';
 	});
 
 	// outdated/improper behavior
-	test.skip('test4: should render 0, 		scrolltop halfway through cell 0', async function () {
+	test('test4: should render 0, 		scrolltop halfway through cell 0', async function () {
 		await withTestNotebook(
 			[
 				['# header a', 'markdown', CellKind.Markup, [], {}],
@@ -262,8 +260,7 @@ import { OutlineTarget } from 'vs/workbench/services/outline/browser/outline';
 			});
 	});
 
-	// outdated/improper behavior
-	test.skip('test5: should render 0->2, 	scrolltop halfway through cell 2', async function () {
+	test('test5: should render 0->2, 	scrolltop halfway through cell 2', async function () {
 		await withTestNotebook(
 			[
 				['# header a', 'markdown', CellKind.Markup, [], {}],
@@ -303,8 +300,7 @@ import { OutlineTarget } from 'vs/workbench/services/outline/browser/outline';
 			});
 	});
 
-	// outdated/improper behavior
-	test.skip('test6: should render 6->7, 	scrolltop halfway through cell 7', async function () {
+	test('test6: should render 6->7, 	scrolltop halfway through cell 7', async function () {
 		await withTestNotebook(
 			[
 				['# header a', 'markdown', CellKind.Markup, [], {}],
@@ -344,7 +340,6 @@ import { OutlineTarget } from 'vs/workbench/services/outline/browser/outline';
 			});
 	});
 
-	// waiting on behavior push to fix this.
 	test('test7: should render 0->1, 	collapsing against next section', async function () {
 		await withTestNotebook(
 			[
@@ -386,6 +381,4 @@ import { OutlineTarget } from 'vs/workbench/services/outline/browser/outline';
 				outline.dispose();
 			});
 	});
-
-
 });

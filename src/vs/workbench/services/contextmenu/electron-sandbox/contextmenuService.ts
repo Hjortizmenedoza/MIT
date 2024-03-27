@@ -12,10 +12,10 @@ import { getZoomFactor } from 'vs/base/browser/browser';
 import { unmnemonicLabel } from 'vs/base/common/labels';
 import { INotificationService } from 'vs/platform/notification/common/notification';
 import { IContextMenuDelegate, IContextMenuEvent } from 'vs/base/browser/contextmenu';
-import { once } from 'vs/base/common/functional';
+import { createSingleCallFunction } from 'vs/base/common/functional';
 import { IContextMenuItem } from 'vs/base/parts/contextmenu/common/contextmenu';
 import { popup } from 'vs/base/parts/contextmenu/electron-sandbox/contextmenu';
-import { getTitleBarStyle } from 'vs/platform/window/common/window';
+import { hasNativeTitlebar } from 'vs/platform/window/common/window';
 import { isMacintosh, isWindows } from 'vs/base/common/platform';
 import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
 import { ContextMenuMenuDelegate, ContextMenuService as HTMLContextMenuService } from 'vs/platform/contextview/browser/contextMenuService';
@@ -48,7 +48,7 @@ export class ContextMenuService implements IContextMenuService {
 	) {
 
 		// Custom context menu: Linux/Windows if custom title is enabled
-		if (!isMacintosh && getTitleBarStyle(configurationService) === 'custom') {
+		if (!isMacintosh && !hasNativeTitlebar(configurationService)) {
 			this.impl = new HTMLContextMenuService(telemetryService, notificationService, contextViewService, keybindingService, menuService, contextKeyService);
 		}
 
@@ -93,7 +93,7 @@ class NativeContextMenuService extends Disposable implements IContextMenuService
 
 		const actions = delegate.getActions();
 		if (actions.length) {
-			const onHide = once(() => {
+			const onHide = createSingleCallFunction(() => {
 				delegate.onHide?.(false);
 
 				dom.ModifierKeyEmitter.getInstance().resetKeyStatus();
@@ -106,8 +106,8 @@ class NativeContextMenuService extends Disposable implements IContextMenuService
 			let x: number | undefined;
 			let y: number | undefined;
 
-			let zoom = getZoomFactor();
-			if (dom.isHTMLElement(anchor)) {
+			let zoom = getZoomFactor(anchor instanceof HTMLElement ? dom.getWindow(anchor) : dom.getActiveWindow());
+			if (anchor instanceof HTMLElement) {
 				const elementPosition = dom.getDomNodePagePosition(anchor);
 
 				// When drawing context menus, we adjust the pixel position for native menus using zoom level
@@ -129,6 +129,7 @@ class NativeContextMenuService extends Disposable implements IContextMenuService
 					}
 
 					if (!isMacintosh) {
+						const window = dom.getWindow(anchor);
 						const availableHeightForMenu = window.screen.height - y;
 						if (availableHeightForMenu < actions.length * (isWindows ? 45 : 32) /* guess of 1 menu item height */) {
 							// this is a guess to detect whether the context menu would

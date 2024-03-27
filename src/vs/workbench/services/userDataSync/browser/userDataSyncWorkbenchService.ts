@@ -19,11 +19,12 @@ import { IProductService } from 'vs/platform/product/common/productService';
 import { IExtensionService } from 'vs/workbench/services/extensions/common/extensions';
 import { localize } from 'vs/nls';
 import { INotificationService, Severity } from 'vs/platform/notification/common/notification';
-import { IDialogService } from 'vs/platform/dialogs/common/dialogs';
+import { IDialogService, IFileDialogService } from 'vs/platform/dialogs/common/dialogs';
 import { IContextKey, IContextKeyService } from 'vs/platform/contextkey/common/contextkey';
 import { IProgressService, ProgressLocation } from 'vs/platform/progress/common/progress';
 import { URI } from 'vs/base/common/uri';
-import { IViewsService, IViewDescriptorService } from 'vs/workbench/common/views';
+import { IViewDescriptorService } from 'vs/workbench/common/views';
+import { IViewsService } from 'vs/workbench/services/views/common/viewsService';
 import { ILifecycleService } from 'vs/workbench/services/lifecycle/common/lifecycle';
 import { isWeb } from 'vs/base/common/platform';
 import { IInstantiationService } from 'vs/platform/instantiation/common/instantiation';
@@ -39,6 +40,8 @@ import { IBrowserWorkbenchEnvironmentService } from 'vs/workbench/services/envir
 import { IUserDataInitializationService } from 'vs/workbench/services/userData/browser/userDataInit';
 import { ISecretStorageService } from 'vs/platform/secrets/common/secrets';
 import { IFileService } from 'vs/platform/files/common/files';
+import { escapeRegExpCharacters } from 'vs/base/common/strings';
+import { IUserDataSyncMachinesService } from 'vs/platform/userDataSync/common/userDataSyncMachines';
 
 type AccountQuickPickItem = { label: string; authenticationProvider: IAuthenticationProvider; account?: UserDataSyncAccount; description?: string };
 
@@ -115,6 +118,8 @@ export class UserDataSyncWorkbenchService extends Disposable implements IUserDat
 		@IEditorService private readonly editorService: IEditorService,
 		@IUserDataInitializationService private readonly userDataInitializationService: IUserDataInitializationService,
 		@IFileService private readonly fileService: IFileService,
+		@IFileDialogService private readonly fileDialogService: IFileDialogService,
+		@IUserDataSyncMachinesService private readonly userDataSyncMachinesService: IUserDataSyncMachinesService,
 	) {
 		super();
 		this.syncEnablementContext = CONTEXT_SYNC_ENABLEMENT.bindTo(contextKeyService);
@@ -318,7 +323,7 @@ export class UserDataSyncWorkbenchService extends Disposable implements IUserDat
 			this.environmentService.options.settingsSyncOptions.enablementHandler(true, this.currentAuthenticationProviderId);
 		}
 
-		this.notificationService.info(localize('sync turned on', "{0} is turned on", SYNC_TITLE));
+		this.notificationService.info(localize('sync turned on', "{0} is turned on", SYNC_TITLE.value));
 	}
 
 	async turnoff(everywhere: boolean): Promise<void> {
@@ -358,7 +363,7 @@ export class UserDataSyncWorkbenchService extends Disposable implements IUserDat
 		try {
 			await this.progressService.withProgress({
 				location: ProgressLocation.Window,
-				title: SYNC_TITLE,
+				title: SYNC_TITLE.value,
 				command: SHOW_SYNC_LOG_COMMAND_ID,
 				delay: 500,
 			}, async progress => {
@@ -477,15 +482,50 @@ export class UserDataSyncWorkbenchService extends Disposable implements IUserDat
 		await this.viewsService.openViewContainer(SYNC_VIEW_CONTAINER_ID);
 	}
 
-	async downloadSyncActivity(location: URI): Promise<void> {
-		await Promise.all([
-			this.userDataSyncService.saveRemoteActivityData(this.uriIdentityService.extUri.joinPath(location, 'remoteActivity.json')),
-			(async () => {
-				const logResources = await this.getAllLogResources();
-				await Promise.all(logResources.map(async logResource => this.fileService.copy(logResource, this.uriIdentityService.extUri.joinPath(location, 'logs', `${this.uriIdentityService.extUri.basename(this.uriIdentityService.extUri.dirname(logResource))}.log`))));
-			})(),
-			this.fileService.copy(this.environmentService.userDataSyncHome, this.uriIdentityService.extUri.joinPath(location, 'localActivity')),
-		]);
+	async downloadSyncActivity(): Promise<URI | undefined> {
+		const result = await this.fileDialogService.showOpenDialog({
+			title: localize('download sync activity dialog title', "Select folder to download Settings Sync activity"),
+			canSelectFiles: false,
+			canSelectFolders: true,
+			canSelectMany: false,
+			openLabel: localize('download sync activity dialog open label', "Save"),
+		});
+
+		if (!result?.[0]) {
+			return;
+		}
+
+		return this.progressService.withProgress({ location: ProgressLocation.Window }, async () => {
+			const machines = await this.userDataSyncMachinesService.getMachines();
+			const currentMachine = machines.find(m => m.isCurrent);
+			const name = (currentMachine ? currentMachine.name + ' - ' : '') + 'Settings Sync Activity';
+			const stat = await this.fileService.resolve(result[0]);
+
+			const nameRegEx = new RegExp(`${escapeRegExpCharacters(name)}\\s(\\d+)`);
+			const indexes: number[] = [];
+			for (const child of stat.children ?? []) {
+				if (child.name === name) {
+					indexes.push(0);
+				} else {
+					const matches = nameRegEx.exec(child.name);
+					if (matches) {
+						indexes.push(parseInt(matches[1]));
+					}
+				}
+			}
+			indexes.sort((a, b) => a - b);
+
+			const folder = this.uriIdentityService.extUri.joinPath(result[0], indexes[0] !== 0 ? name : `${name} ${indexes[indexes.length - 1] + 1}`);
+			await Promise.all([
+				this.userDataSyncService.saveRemoteActivityData(this.uriIdentityService.extUri.joinPath(folder, 'remoteActivity.json')),
+				(async () => {
+					const logResources = await this.getAllLogResources();
+					await Promise.all(logResources.map(async logResource => this.fileService.copy(logResource, this.uriIdentityService.extUri.joinPath(folder, 'logs', `${this.uriIdentityService.extUri.basename(this.uriIdentityService.extUri.dirname(logResource))}.log`))));
+				})(),
+				this.fileService.copy(this.environmentService.userDataSyncHome, this.uriIdentityService.extUri.joinPath(folder, 'localActivity')),
+			]);
+			return folder;
+		});
 	}
 
 	private async waitForActiveSyncViews(): Promise<void> {
@@ -546,7 +586,7 @@ export class UserDataSyncWorkbenchService extends Disposable implements IUserDat
 			}));
 		});
 
-		quickPick.title = SYNC_TITLE;
+		quickPick.title = SYNC_TITLE.value;
 		quickPick.ok = false;
 		quickPick.ignoreFocusOut = true;
 		quickPick.placeholder = localize('choose account placeholder', "Select an account to sign in");
@@ -601,7 +641,7 @@ export class UserDataSyncWorkbenchService extends Disposable implements IUserDat
 			quickPickItems.push({ type: 'separator', label: localize('signed in', "Signed in") });
 			for (const authenticationProvider of authenticationProviders) {
 				const accounts = (allAccounts.get(authenticationProvider.id) || []).sort(({ sessionId }) => sessionId === this.currentSessionId ? -1 : 1);
-				const providerName = this.authenticationService.getLabel(authenticationProvider.id);
+				const providerName = this.authenticationService.getProvider(authenticationProvider.id).label;
 				for (const account of accounts) {
 					quickPickItems.push({
 						label: `${account.accountName} (${providerName})`,
@@ -616,8 +656,9 @@ export class UserDataSyncWorkbenchService extends Disposable implements IUserDat
 
 		// Account Providers
 		for (const authenticationProvider of authenticationProviders) {
-			if (!allAccounts.has(authenticationProvider.id) || this.authenticationService.supportsMultipleAccounts(authenticationProvider.id)) {
-				const providerName = this.authenticationService.getLabel(authenticationProvider.id);
+			const provider = this.authenticationService.getProvider(authenticationProvider.id);
+			if (!allAccounts.has(authenticationProvider.id) || provider.supportsMultipleAccounts) {
+				const providerName = provider.label;
 				quickPickItems.push({ label: localize('sign in using account', "Sign in with {0}", providerName), authenticationProvider });
 			}
 		}
@@ -633,12 +674,14 @@ export class UserDataSyncWorkbenchService extends Disposable implements IUserDat
 			} else {
 				sessionId = (await this.authenticationService.createSession(accountOrAuthProvider.id, accountOrAuthProvider.scopes)).id;
 			}
+			this.currentAuthenticationProviderId = accountOrAuthProvider.id;
 		} else {
 			if (this.environmentService.options?.settingsSyncOptions?.authenticationProvider?.id === accountOrAuthProvider.authenticationProviderId) {
 				sessionId = await this.environmentService.options?.settingsSyncOptions?.authenticationProvider?.signIn();
 			} else {
 				sessionId = accountOrAuthProvider.sessionId;
 			}
+			this.currentAuthenticationProviderId = accountOrAuthProvider.authenticationProviderId;
 		}
 		this.currentSessionId = sessionId;
 		await this.update();
@@ -651,7 +694,7 @@ export class UserDataSyncWorkbenchService extends Disposable implements IUserDat
 	}
 
 	private onDidChangeSessions(e: AuthenticationSessionsChangeEvent): void {
-		if (this.currentSessionId && e.removed.find(session => session.id === this.currentSessionId)) {
+		if (this.currentSessionId && e.removed?.find(session => session.id === this.currentSessionId)) {
 			this.currentSessionId = undefined;
 		}
 		this.update('change in sessions');

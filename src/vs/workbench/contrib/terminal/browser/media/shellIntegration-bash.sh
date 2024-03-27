@@ -22,7 +22,7 @@ if [ "$VSCODE_INJECTION" == "1" ]; then
 		if [ -r /etc/profile ]; then
 			. /etc/profile
 		fi
-		# exceute the first that exists
+		# execute the first that exists
 		if [ -r ~/.bash_profile ]; then
 			. ~/.bash_profile
 		elif [ -r ~/.bash_login ]; then
@@ -47,28 +47,28 @@ fi
 
 # Apply EnvironmentVariableCollections if needed
 if [ -n "${VSCODE_ENV_REPLACE:-}" ]; then
-	IFS=':' read -ra ADDR <<<"$VSCODE_ENV_REPLACE"
+	IFS=':' read -ra ADDR <<< "$VSCODE_ENV_REPLACE"
 	for ITEM in "${ADDR[@]}"; do
 		VARNAME="$(echo $ITEM | cut -d "=" -f 1)"
-		VALUE="$(echo -e "$ITEM" | cut -d "=" -f 2)"
+		VALUE="$(echo -e "$ITEM" | cut -d "=" -f 2-)"
 		export $VARNAME="$VALUE"
 	done
 	builtin unset VSCODE_ENV_REPLACE
 fi
 if [ -n "${VSCODE_ENV_PREPEND:-}" ]; then
-	IFS=':' read -ra ADDR <<<"$VSCODE_ENV_PREPEND"
+	IFS=':' read -ra ADDR <<< "$VSCODE_ENV_PREPEND"
 	for ITEM in "${ADDR[@]}"; do
 		VARNAME="$(echo $ITEM | cut -d "=" -f 1)"
-		VALUE="$(echo -e "$ITEM" | cut -d "=" -f 2)"
+		VALUE="$(echo -e "$ITEM" | cut -d "=" -f 2-)"
 		export $VARNAME="$VALUE${!VARNAME}"
 	done
 	builtin unset VSCODE_ENV_PREPEND
 fi
 if [ -n "${VSCODE_ENV_APPEND:-}" ]; then
-	IFS=':' read -ra ADDR <<<"$VSCODE_ENV_APPEND"
+	IFS=':' read -ra ADDR <<< "$VSCODE_ENV_APPEND"
 	for ITEM in "${ADDR[@]}"; do
 		VARNAME="$(echo $ITEM | cut -d "=" -f 1)"
-		VALUE="$(echo -e "$ITEM" | cut -d "=" -f 2)"
+		VALUE="$(echo -e "$ITEM" | cut -d "=" -f 2-)"
 		export $VARNAME="${!VARNAME}$VALUE"
 	done
 	builtin unset VSCODE_ENV_APPEND
@@ -95,38 +95,12 @@ __vsc_get_trap() {
 	builtin printf '%s' "${terms[2]:-}"
 }
 
-__vsc_command_available() {
-	builtin local trash
-	trash=$(builtin command -v "$1" 2>&1)
-	builtin return $?
+__vsc_escape_value_fast() {
+	builtin local LC_ALL=C out
+	out=${1//\\/\\\\}
+	out=${out//;/\\x3b}
+	builtin printf '%s\n' "${out}"
 }
-
-# We provide two faster escaping functions here.
-# The first one escapes each byte 0xab into '\xab', which is most scalable and has promising runtime
-# efficiency, except that it relies on external commands od and tr.
-# The second one is much faster and has zero dependency, except that it escapes only
-# '\\' -> '\\\\' and ';' -> '\x3b' and scales up badly when more patterns are needed.
-# We default to use the first function if od and tr are available, and fallback to the second otherwise.
-if __vsc_command_available od && __vsc_command_available tr; then
-	__vsc_escape_value_fast() {
-		builtin local out
-		# -An removes line number
-		# -v do not use * to mark line suppression
-		# -tx1 prints each byte as two-digit hex
-		# tr -d '\n' concats all output lines
-		out=$(od -An -vtx1 <<<"$1" | tr -d '\n')
-		out=${out// /\\x}
-		# <<<"$1" prepends a trailing newline already, so we don't need to printf '%s\n'
-		builtin printf '%s' "${out}"
-	}
-else
-	__vsc_escape_value_fast() {
-		builtin local LC_ALL=C out
-		out=${1//\\/\\\\}
-		out=${out//;/\\x3b}
-		builtin printf '%s\n' "${out}"
-	}
-fi
 
 # The property (P) and command (E) codes embed values which require escaping.
 # Backslashes are doubled. Non-alphanumeric characters are converted to escaped hex.
@@ -140,7 +114,7 @@ __vsc_escape_value() {
 	# Process text byte by byte, not by codepoint.
 	builtin local LC_ALL=C str="${1}" i byte token out=''
 
-	for ((i = 0; i < "${#str}"; ++i)); do
+	for (( i=0; i < "${#str}"; ++i )); do
 		byte="${str:$i:1}"
 
 		# Escape backslashes and semi-colons
@@ -243,7 +217,7 @@ __vsc_precmd() {
 
 __vsc_preexec() {
 	__vsc_initialized=1
-	if [[ ! "$BASH_COMMAND" =~ ^__vsc_prompt* ]]; then
+	if [[ ! $BASH_COMMAND == __vsc_prompt* ]]; then
 		# Use history if it's available to verify the command as BASH_COMMAND comes in with aliases
 		# resolved
 		if [ "$__vsc_history_verify" = "1" ]; then
@@ -282,8 +256,8 @@ else
 		__vsc_preexec_all() {
 			if [ "$__vsc_in_command_execution" = "0" ]; then
 				__vsc_in_command_execution="1"
-				builtin eval "${__vsc_dbg_trap}"
 				__vsc_preexec
+				builtin eval "${__vsc_dbg_trap}"
 			fi
 		}
 		trap '__vsc_preexec_all "$_"' DEBUG
