@@ -8,7 +8,7 @@ import { Event, Emitter } from 'vs/base/common/event';
 import { basename, dirname } from 'vs/base/common/resources';
 import { IDisposable, Disposable, DisposableStore, combinedDisposable, dispose, toDisposable, MutableDisposable, IReference, DisposableMap } from 'vs/base/common/lifecycle';
 import { ViewPane, IViewPaneOptions, ViewAction } from 'vs/workbench/browser/parts/views/viewPane';
-import { append, $, Dimension, asCSSUrl, trackFocus, clearNode, prepend } from 'vs/base/browser/dom';
+import { append, $, Dimension, asCSSUrl, trackFocus, clearNode, prepend, isPointerEvent } from 'vs/base/browser/dom';
 import { IListVirtualDelegate, IIdentityProvider } from 'vs/base/browser/ui/list/list';
 import { ISCMHistoryItem, ISCMHistoryItemChange, ISCMHistoryProviderCacheEntry, SCMHistoryItemChangeTreeElement, SCMHistoryItemGroupTreeElement, SCMHistoryItemTreeElement, SCMViewSeparatorElement } from 'vs/workbench/contrib/scm/common/history';
 import { ISCMResourceGroup, ISCMResource, InputValidationType, ISCMRepository, ISCMInput, IInputValidation, ISCMViewService, ISCMViewVisibleRepositoryChangeEvent, ISCMService, SCMInputChangeReason, VIEW_PANE_ID, ISCMActionButton, ISCMActionButtonDescriptor, ISCMRepositorySortKey, ISCMInputValueProviderContext, ISCMProvider } from 'vs/workbench/contrib/scm/common/scm';
@@ -111,6 +111,7 @@ import { getDefaultHoverDelegate } from 'vs/base/browser/ui/hover/hoverDelegateF
 import { MarkdownString } from 'vs/base/common/htmlContent';
 import type { IUpdatableHover, IUpdatableHoverTooltipMarkdownString } from 'vs/base/browser/ui/hover/hover';
 import { IHoverService } from 'vs/platform/hover/browser/hover';
+import { OpenScmGroupAction } from 'vs/workbench/contrib/multiDiffEditor/browser/scmMultiDiffSourceResolver';
 
 // type SCMResourceTreeNode = IResourceNode<ISCMResource, ISCMResourceGroup>;
 // type SCMHistoryItemChangeResourceTreeNode = IResourceNode<SCMHistoryItemChangeTreeElement, SCMHistoryItemTreeElement>;
@@ -799,12 +800,12 @@ class HistoryItemGroupRenderer implements ICompressibleTreeRenderer<SCMHistoryIt
 
 	constructor(
 		readonly actionRunner: ActionRunner,
-		@IContextKeyService readonly contextKeyService: IContextKeyService,
-		@IContextMenuService readonly contextMenuService: IContextMenuService,
-		@IKeybindingService	readonly keybindingService: IKeybindingService,
-		@IMenuService readonly menuService: IMenuService,
+		@IContextKeyService private readonly contextKeyService: IContextKeyService,
+		@IContextMenuService private readonly contextMenuService: IContextMenuService,
+		@IKeybindingService private readonly keybindingService: IKeybindingService,
+		@IMenuService private readonly menuService: IMenuService,
 		@ISCMViewService private readonly scmViewService: ISCMViewService,
-		@ITelemetryService readonly telemetryService: ITelemetryService
+		@ITelemetryService private readonly telemetryService: ITelemetryService
 	) { }
 
 	renderTemplate(container: HTMLElement) {
@@ -1115,11 +1116,11 @@ class SeparatorRenderer implements ICompressibleTreeRenderer<SCMViewSeparatorEle
 	get templateId(): string { return SeparatorRenderer.TEMPLATE_ID; }
 
 	constructor(
-		@IContextKeyService readonly contextKeyService: IContextKeyService,
-		@IContextMenuService readonly contextMenuService: IContextMenuService,
-		@IKeybindingService	readonly keybindingService: IKeybindingService,
-		@IMenuService readonly menuService: IMenuService,
-		@ITelemetryService readonly telemetryService: ITelemetryService
+		@IContextKeyService private readonly contextKeyService: IContextKeyService,
+		@IContextMenuService private readonly contextMenuService: IContextMenuService,
+		@IKeybindingService private readonly keybindingService: IKeybindingService,
+		@IMenuService private readonly menuService: IMenuService,
+		@ITelemetryService private readonly telemetryService: ITelemetryService
 	) { }
 
 	renderTemplate(container: HTMLElement): SeparatorTemplate {
@@ -3091,7 +3092,22 @@ export class SCMViewPane extends ViewPane {
 			return;
 		} else if (isSCMResource(e.element)) {
 			if (e.element.command?.id === API_OPEN_EDITOR_COMMAND_ID || e.element.command?.id === API_OPEN_DIFF_EDITOR_COMMAND_ID) {
-				await this.commandService.executeCommand(e.element.command.id, ...(e.element.command.arguments || []), e);
+				if (isPointerEvent(e.browserEvent) && e.browserEvent.button === 1) {
+					await OpenScmGroupAction.openMultiFileDiffEditor(e.element.resourceGroup, this.editorService, {
+						...e.editorOptions,
+						viewState: {
+							revealData: {
+								resource: {
+									original: e.element.multiDiffEditorOriginalUri,
+									modified: e.element.multiDiffEditorModifiedUri,
+								}
+							}
+						},
+						preserveFocus: true,
+					});
+				} else {
+					await this.commandService.executeCommand(e.element.command.id, ...(e.element.command.arguments || []), e);
+				}
 			} else {
 				await e.element.open(!!e.editorOptions.preserveFocus);
 
