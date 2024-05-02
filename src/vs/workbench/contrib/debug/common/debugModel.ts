@@ -579,9 +579,9 @@ export class Thread implements IThread {
 	getTopStackFrame(): IStackFrame | undefined {
 		const callStack = this.getCallStack();
 		// Allow stack frame without source and with instructionReferencePointer as top stack frame when using disassembly view.
-		const firstAvailableStackFrame = callStack.find(sf => !!(sf &&
+		const firstAvailableStackFrame = callStack.find(sf => !!(
 			((this.stoppedDetails?.reason === 'instruction breakpoint' || (this.stoppedDetails?.reason === 'step' && this.lastSteppingGranularity === 'instruction')) && sf.instructionPointerReference) ||
-			(sf.source && sf.source.available && sf.source.presentationHint !== 'deemphasize')));
+			(sf.source && sf.source.available && sf.presentationHint !== 'deemphasize' && sf.source.presentationHint !== 'deemphasize')));
 		return firstAvailableStackFrame;
 	}
 
