@@ -94,6 +94,10 @@ class MinimapOptions {
 	public readonly minimapCharWidth: number;
 	public readonly sectionHeaderFontFamily: string;
 	public readonly sectionHeaderFontSize: number;
+	/**
+	 * Space in between the characters of the section header (in CSS px)
+	 */
+	public readonly sectionHeaderLetterSpacing: number;
 	public readonly sectionHeaderFontColor: RGBA8;
 
 	public readonly charRenderer: () => MinimapCharRenderer;
@@ -139,6 +143,7 @@ class MinimapOptions {
 		this.minimapCharWidth = Constants.BASE_CHAR_WIDTH * this.fontScale;
 		this.sectionHeaderFontFamily = DEFAULT_FONT_FAMILY;
 		this.sectionHeaderFontSize = minimapOpts.sectionHeaderFontSize * pixelRatio;
+		this.sectionHeaderLetterSpacing = minimapOpts.sectionHeaderLetterSpacing * pixelRatio;
 		this.sectionHeaderFontColor = MinimapOptions._getSectionHeaderColor(theme, tokensColorTracker.getColor(ColorId.DefaultForeground));
 
 		this.charRenderer = createSingleCallFunction(() => MinimapCharRendererFactory.create(this.fontScale, fontInfo.fontFamily));
@@ -1788,6 +1793,7 @@ class InnerMinimap extends Disposable {
 	private _renderSectionHeaders(layout: MinimapLayout) {
 		const minimapLineHeight = this._model.options.minimapLineHeight;
 		const sectionHeaderFontSize = this._model.options.sectionHeaderFontSize;
+		const sectionHeaderLetterSpacing = this._model.options.sectionHeaderLetterSpacing;
 		const backgroundFillHeight = sectionHeaderFontSize * 1.5;
 		const { canvasInnerWidth } = this._model.options;
 
@@ -1798,7 +1804,8 @@ class InnerMinimap extends Disposable {
 		const separatorStroke = foregroundFill;
 
 		const canvasContext = this._decorationsCanvas.domNode.getContext('2d')!;
-		canvasContext.font = sectionHeaderFontSize + 'px ' + this._model.options.sectionHeaderFontFamily;
+		canvasContext.letterSpacing = sectionHeaderLetterSpacing + 'px';
+		canvasContext.font = '500 ' + sectionHeaderFontSize + 'px ' + this._model.options.sectionHeaderFontFamily;
 		canvasContext.strokeStyle = separatorStroke;
 		canvasContext.lineWidth = 0.2;
 
@@ -1820,11 +1827,13 @@ class InnerMinimap extends Disposable {
 				decoration.options.minimap?.sectionHeaderStyle === MinimapSectionHeaderStyle.Underlined,
 				backgroundFill,
 				foregroundFill,
+				sectionHeaderLetterSpacing,
 				canvasInnerWidth,
 				backgroundFillY,
 				backgroundFillHeight,
 				y,
-				separatorY);
+				separatorY,
+			);
 		}
 	}
 
@@ -1866,12 +1875,14 @@ class InnerMinimap extends Disposable {
 		hasSeparatorLine: boolean,
 		backgroundFill: string,
 		foregroundFill: string,
+		letterSpacing: number,
 		minimapWidth: number,
 		backgroundFillY: number,
 		backgroundFillHeight: number,
 		textY: number,
 		separatorY: number
 	): void {
+
 		if (headerText) {
 			target.fillStyle = backgroundFill;
 			target.fillRect(0, backgroundFillY, minimapWidth, backgroundFillHeight);
