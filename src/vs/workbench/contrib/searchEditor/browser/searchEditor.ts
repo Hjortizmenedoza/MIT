@@ -483,6 +483,15 @@ export class SearchEditor extends AbstractTextCodeEditor<SearchEditorViewState> 
 	}
 
 	async triggerSearch(_options?: { resetCursor?: boolean; delay?: number; focusResults?: boolean }) {
+		const focusResults = this.searchConfig.searchEditor.focusResults;
+
+		// If _options don't define focusResult field, then use the setting
+		if (_options === undefined) {
+			_options = { focusResults: focusResults };
+		} else if (_options.focusResults === undefined) {
+			_options.focusResults = focusResults;
+		}
+
 		const options = { resetCursor: true, delay: 0, ..._options };
 
 		if (!this.pauseSearching) {
@@ -495,6 +504,11 @@ export class SearchEditor extends AbstractTextCodeEditor<SearchEditorViewState> 
 				}
 				if (options.focusResults) {
 					this.searchResultEditor.focus();
+				} else {
+					// A workaround for use case where a PeekViewWidget was open in previous
+					// Search Editor results. After a new search is completed, at the widget
+					// closure the ReferencesController moves focus to results.
+					this.focusSearchInput();
 				}
 			}, options.delay);
 		}
