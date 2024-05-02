@@ -141,23 +141,67 @@ export class IssueMainService implements IIssueMainService {
 
 	//#region Used by renderer
 
-	async openReporter(data: IssueReporterData): Promise<void> {
-		if (!this.issueReporterWindow) {
-			this.issueReporterParentWindow = BrowserWindow.getFocusedWindow();
-			if (this.issueReporterParentWindow) {
-				const issueReporterDisposables = new DisposableStore();
+	openReporterPage(data: IssueReporterData): void {
+		this.issueReporterParentWindow = BrowserWindow.getFocusedWindow();
+		if (this.issueReporterParentWindow) {
+			const issueReporterDisposables = new DisposableStore();
 
-				const issueReporterWindowConfigUrl = issueReporterDisposables.add(this.protocolMainService.createIPCObjectUrl<IssueReporterWindowConfiguration>());
-				const position = this.getWindowPosition(this.issueReporterParentWindow, 700, 800);
+			const issueReporterWindowConfigUrl = issueReporterDisposables.add(this.protocolMainService.createIPCObjectUrl<IssueReporterWindowConfiguration>());
+			const position = this.getWindowPosition(this.issueReporterParentWindow, 700, 800);
 
-				this.issueReporterWindow = this.createBrowserWindow(position, issueReporterWindowConfigUrl, {
-					backgroundColor: data.styles.backgroundColor,
-					title: localize('issueReporter', "Issue Reporter"),
-					zoomLevel: data.zoomLevel,
-					alwaysOnTop: false
-				}, 'issue-reporter');
+			this.issueReporterWindow = this.createBrowserWindow(position, issueReporterWindowConfigUrl, {
+				backgroundColor: data.styles.backgroundColor,
+				title: localize('issueReporter', "Issue Reporter"),
+				zoomLevel: data.zoomLevel,
+				alwaysOnTop: false
+			}, 'issue-reporter');
 
-				// Store into config object URL
+			// Store into config object URL
+			issueReporterWindowConfigUrl.update({
+				appRoot: this.environmentMainService.appRoot,
+				windowId: this.issueReporterWindow.id,
+				userEnv: this.userEnv,
+				data,
+				disableExtensions: !!this.environmentMainService.disableExtensions,
+				os: {
+					type: type(),
+					arch: arch(),
+					release: release(),
+				},
+				product
+			});
+
+			this.issueReporterWindow.loadURL(
+				FileAccess.asBrowserUri(`vs/code/electron-sandbox/issue/issueReporter${this.environmentMainService.isBuilt ? '' : '-dev'}.html`).toString(true)
+			);
+
+			this.issueReporterWindow.on('close', () => {
+				this.issueReporterWindow = null;
+				issueReporterDisposables.dispose();
+			});
+
+			this.issueReporterParentWindow.on('closed', () => {
+				if (this.issueReporterWindow) {
+					this.issueReporterWindow.close();
+					this.issueReporterWindow = null;
+					issueReporterDisposables.dispose();
+				}
+			});
+		}
+	}
+
+	openReporterPage2(data: IssueReporterData): void {
+		this.issueReporterParentWindow = BrowserWindow.getFocusedWindow();
+		if (this.issueReporterParentWindow) {
+			const issueReporterDisposables = new DisposableStore();
+
+			const issueReporterWindowConfigUrl = issueReporterDisposables.add(this.protocolMainService.createIPCObjectUrl<IssueReporterWindowConfiguration>());
+
+
+			if (this.issueReporterWindow) {
+
+
+				this.focusWindow(this.issueReporterWindow);
 				issueReporterWindowConfigUrl.update({
 					appRoot: this.environmentMainService.appRoot,
 					windowId: this.issueReporterWindow.id,
@@ -171,7 +215,6 @@ export class IssueMainService implements IIssueMainService {
 					},
 					product
 				});
-
 				this.issueReporterWindow.loadURL(
 					FileAccess.asBrowserUri(`vs/code/electron-sandbox/issue/issueReporter${this.environmentMainService.isBuilt ? '' : '-dev'}.html`).toString(true)
 				);
@@ -180,19 +223,39 @@ export class IssueMainService implements IIssueMainService {
 					this.issueReporterWindow = null;
 					issueReporterDisposables.dispose();
 				});
-
-				this.issueReporterParentWindow.on('closed', () => {
-					if (this.issueReporterWindow) {
-						this.issueReporterWindow.close();
-						this.issueReporterWindow = null;
-						issueReporterDisposables.dispose();
-					}
-				});
 			}
+
+			this.issueReporterParentWindow.on('closed', () => {
+				if (this.issueReporterWindow) {
+					this.issueReporterWindow.close();
+					this.issueReporterWindow = null;
+					issueReporterDisposables.dispose();
+				}
+			});
+		}
+	}
+
+	async sendReporterMenu(extensionId: string, extensionName: string): Promise<IssueReporterData | undefined> {
+		const window = this.issueReporterWindowCheck();
+		const replyChannel = `vscode:triggerReporterMenu`;
+		const cts = new CancellationTokenSource();
+		window.sendWhenReady(replyChannel, cts.token, { replyChannel, extensionId, extensionName });
+		const result = await raceTimeout(new Promise(resolve => validatedIpcMain.once(`vscode:triggerReporterMenuResponse:${extensionId}`, (_: unknown, data: IssueReporterData | undefined) => resolve(data))), 5000, () => {
+			// this.logService.error(`Error: Extension ${extensionId} timed out waiting for menu response`);
+			cts.cancel();
+		});
+		return result as IssueReporterData | undefined;
+	}
+
+	async openReporter(data: IssueReporterData): Promise<void> {
+		if (!this.issueReporterWindow) {
+			this.openReporterPage(data);
 		}
 
 		else if (this.issueReporterWindow) {
-			this.focusWindow(this.issueReporterWindow);
+			// close current window, open a new one.
+			// this.issueReporterWindow.close();
+			this.openReporterPage2(data);
 		}
 	}
 
